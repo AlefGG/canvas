@@ -13,11 +13,8 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: DrawingPage(
-        size: Size(MediaQuery.sizeOf(context).width,
-            MediaQuery.sizeOf(context).height),
-      ),
+    return const MaterialApp(
+      home: DrawingPage(),
     );
   }
 }

@@ -1,107 +1,158 @@
 import 'dart:ui';
 
-import 'package:flutter/gestures.dart';
+import 'package:canvas_drawable/zoomed_in_view.dart';
 import 'package:flutter/material.dart';
 
-class DrawingPage extends StatefulWidget {
-  const DrawingPage({super.key, required this.size});
+enum CanvasState { pan, draw }
 
-  final Size size;
+class DrawingPage extends StatefulWidget {
+  const DrawingPage({super.key});
 
   @override
-  DrawingPageState createState() => DrawingPageState();
+  _DrawingPageState createState() => _DrawingPageState();
 }
 
-class DrawingPageState extends State<DrawingPage> {
+class _DrawingPageState extends State<DrawingPage> {
   List<Offset?> points = [];
-  Offset _canvasOffset = Offset.zero;
-  Offset? _previousOffset;
+  CanvasState canvasState = CanvasState.draw;
 
-  @override
-  void initState() {
-    super.initState();
-
-    _canvasOffset = Offset(
-      -widget.size.width * 5,
-      -widget.size.height * 5,
-    );
-  }
+  //add the offset variable to keep track of the current offset
+  Offset offset = const Offset(0, 0);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: GestureDetector(
-        onPanUpdate: (details) {
+      floatingActionButton: FloatingActionButton(
+        backgroundColor:
+            canvasState == CanvasState.draw ? Colors.red : Colors.blue,
+        onPressed: () {
           setState(() {
-            points.add(details.localPosition - _canvasOffset);
+            canvasState = canvasState == CanvasState.draw
+                ? CanvasState.pan
+                : CanvasState.draw;
           });
         },
-        onPanEnd: (details) {
-          points.add(null);
-        },
-        onScaleUpdate: (details) {
-          // Only pan the canvas if two fingers are used
-          if (details.pointerCount == 2) {
-            setState(() {
-              _canvasOffset += details.focalPointDelta;
-            });
-          }
-        },
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: DrawingPainter(points, _canvasOffset),
+        child: Text(
+          canvasState == CanvasState.draw ? "Draw" : "Pan",
         ),
+      ),
+      body: Stack(
+        children: [
+          GestureDetector(
+            onPanDown: (details) {
+              setState(() {
+                if (canvasState == CanvasState.draw) {
+                  points.add(details.localPosition - offset);
+                }
+              });
+            },
+            onPanUpdate: (details) {
+              setState(() {
+                if (canvasState == CanvasState.pan) {
+                  offset += details.delta;
+                } else {
+                  points.add(details.localPosition - offset);
+                }
+              });
+            },
+            onPanEnd: (details) {
+              setState(() {
+                if (canvasState == CanvasState.draw) {
+                  points.add(null);
+                }
+              });
+            },
+            child: SizedBox(
+              width: MediaQuery.sizeOf(context).width * 10,
+              height: MediaQuery.sizeOf(context).height * 10,
+              child: ClipRRect(
+                child: CustomPaint(
+                  painter: CanvasCustomPainter(
+                    points: points,
+                    offset: offset,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (canvasState == CanvasState.draw && points.isNotEmpty)
+            Positioned(
+              top: 80,
+              right: 80,
+              child: ZoomedInView(
+                currentPoint: points.last ?? Offset.zero,
+                points: points,
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-class DrawingPainter extends CustomPainter {
-  final List<Offset?> points;
-  final Offset canvasOffset;
+class CanvasCustomPainter extends CustomPainter {
+  List<Offset?> points;
+  Offset offset;
 
-  DrawingPainter(this.points, this.canvasOffset);
-
+  CanvasCustomPainter({
+    required this.points,
+    required this.offset,
+  });
   @override
   void paint(Canvas canvas, Size size) {
-    // Apply canvas offset for panning
-    canvas.translate(canvasOffset.dx, canvasOffset.dy);
+    // Определение цвета фона и заливка холста
+    Paint background = Paint()..color = Colors.white;
+    canvas.drawPaint(background);
 
-    // Draw the grid
-    _drawGrid(canvas, size * 10);
+    // Отрисовка бесконечной сетки
+    drawGrid(canvas, size);
 
-    // Draw the user's drawing
-    Paint paint = Paint()
-      ..color = Colors.black
+    // Применяем смещение к холсту
+    canvas.translate(offset.dx, offset.dy);
+
+    // Определение свойств рисования
+    Paint drawingPaint = Paint()
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = 5.0;
+      ..isAntiAlias = true
+      ..color = Colors.black
+      ..strokeWidth = 1.5;
 
-    for (int i = 0; i < points.length - 1; i++) {
-      if (points[i] != null && points[i + 1] != null) {
-        canvas.drawLine(points[i]!, points[i + 1]!, paint);
+    // Отрисовка линий
+    for (int x = 0; x < points.length - 1; x++) {
+      if (points[x] != null && points[x + 1] != null) {
+        canvas.drawLine(points[x]!, points[x + 1]!, drawingPaint);
+      } else if (points[x] != null && points[x + 1] == null) {
+        canvas.drawPoints(PointMode.points, [points[x]!], drawingPaint);
       }
     }
+
+    // Восстанавливаем состояние холста
+    canvas.translate(-offset.dx, -offset.dy);
   }
 
-  void _drawGrid(Canvas canvas, Size size) {
-    double gridSize = 20.0; // Size of each square in the grid
+  void drawGrid(Canvas canvas, Size size) {
+    double gridSize = 20.0; // Размер каждой ячейки сетки
     Paint gridPaint = Paint()
       ..color = Colors.grey[300]!
       ..strokeWidth = 0.5;
 
-    // Draw vertical lines
-    for (double x = 0; x < size.width; x += gridSize) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    // Корректируем смещение для начала сетки
+    double startX = offset.dx % gridSize;
+    double startY = offset.dy % gridSize;
+
+    // Рисование вертикальных линий
+    for (double x = startX; x < size.width; x += gridSize) {
+      canvas.drawLine(Offset(x, startY), Offset(x, size.height), gridPaint);
     }
 
-    // Draw horizontal lines
-    for (double y = 0; y < size.height; y += gridSize) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    // Рисование горизонтальных линий
+    for (double y = startY; y < size.height; y += gridSize) {
+      canvas.drawLine(Offset(startX, y), Offset(size.width, y), gridPaint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
+  bool shouldRepaint(CanvasCustomPainter oldDelegate) {
     return true;
   }
 }
