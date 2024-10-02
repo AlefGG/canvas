@@ -76,13 +76,9 @@ class _DrawingPageState extends State<DrawingPage> {
             ),
           ),
           if (canvasState == CanvasState.draw && points.isNotEmpty)
-            Positioned(
-              top: 80,
-              right: 80,
-              child: ZoomedInView(
-                currentPoint: points.last ?? Offset.zero,
-                points: points,
-              ),
+            ZoomedInView(
+              currentPoint: points.last ?? Offset.zero,
+              points: points,
             ),
         ],
       ),
